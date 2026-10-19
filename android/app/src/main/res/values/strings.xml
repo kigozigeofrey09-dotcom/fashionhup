@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FashionHub</string>
+    <string name="title_activity_main">FashionHub</string>
+    <string name="package_name">com.fashionhub.app</string>
+    <string name="custom_url_scheme">com.fashionhub.app</string>
+</resources>

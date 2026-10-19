@@ -1,0 +1,99 @@
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import { supabase } from "./lib/supabase.js";
+
+const app = express();
+const port = Number(process.env.PORT ?? 4000);
+const frontendOrigin =
+  process.env.FRONTEND_ORIGIN ?? "http://127.0.0.1:5173";
+
+app.use(helmet());
+app.use(cors({ origin: frontendOrigin, credentials: true }));
+app.use(express.json());
+
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, service: "fashionhub-backend" });
+});
+
+app.get("/api/countries", async (_req, res) => {
+  const { data, error } = await supabase
+    .from("countries")
+    .select("code, name, currency, cities, payment_instructions")
+    .eq("enabled", true)
+    .order("name");
+
+  if (error) {
+    console.error("Could not load countries:", error.message);
+    return res.status(500).json({ message: "Could not load countries." });
+  }
+
+  res.json(
+    data.map((country) => ({
+      code: country.code,
+      name: country.name,
+      currency: country.currency,
+      cities: country.cities,
+      paymentInstructions: country.payment_instructions ?? undefined
+    }))
+  );
+});
+
+app.get("/api/subscriptions/plans", async (_req, res) => {
+  const [{ data: plans, error: plansError }, { data: prices, error: pricesError }] =
+    await Promise.all([
+      supabase
+        .from("subscription_plans")
+        .select("*")
+        .eq("enabled", true)
+        .order("id"),
+      supabase
+        .from("subscription_plan_prices")
+        .select("plan_id, country_code, amount, currency")
+    ]);
+
+  if (plansError || pricesError) {
+    console.error(
+      "Could not load subscription plans:",
+      plansError?.message ?? pricesError?.message
+    );
+    return res.status(500).json({ message: "Could not load subscription plans." });
+  }
+
+  res.json(
+    plans.map((plan) => {
+      const countryPrices = Object.fromEntries(
+        prices
+          .filter((price) => price.plan_id === plan.id)
+          .map((price) => [
+            price.country_code,
+            { amount: Number(price.amount), currency: price.currency }
+          ])
+      );
+
+      const ugandaPrice = countryPrices.UG;
+
+      return {
+        id: plan.id,
+        name: plan.name,
+        payerTypes: plan.payer_types,
+        targetRoles: plan.target_roles,
+        benefits: plan.benefits,
+        renewalPeriod: plan.renewal_period,
+        promotionLabel: plan.promotion_label ?? undefined,
+        accessLabel: plan.access_label ?? undefined,
+        countryPrices,
+        amount: ugandaPrice?.amount,
+        currency: ugandaPrice?.currency,
+        priceLabel: ugandaPrice
+          ? `${ugandaPrice.currency} ${ugandaPrice.amount.toLocaleString()} / month`
+          : "Pricing not configured"
+      };
+    })
+  );
+});
+
+app.listen(port, "127.0.0.1", () => {
+  console.log(`FashionHub backend running at http://127.0.0.1:${port}`);
+});
